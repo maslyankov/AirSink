@@ -1,0 +1,24 @@
+# Build artifacts
+build/
+DerivedData/
+vendor/UxPlay/build/
+
+# Xcode (we use plain swiftc + project.yml)
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+.swiftpm/
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log

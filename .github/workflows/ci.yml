@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Cache Homebrew downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/Homebrew
+          key: brew-${{ runner.os }}-airsink-deps-v1
+
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install cmake pkg-config gstreamer libplist openssl@3
+
+      - name: Cache uxplay build
+        uses: actions/cache@v4
+        with:
+          path: vendor/UxPlay/build
+          key: uxplay-${{ runner.os }}-${{ hashFiles('vendor/UxPlay/lib/frame_tap.*', 'vendor/UxPlay/renderers/video_renderer.c', 'vendor/UxPlay/uxplay.cpp') }}
+
+      - name: Build patched uxplay
+        run: ./vendor/build_uxplay.sh
+
+      - name: Typecheck Swift
+        run: |
+          swiftc -typecheck \
+            -target arm64-apple-macos13 \
+            -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
+            Sources/*.swift
+
+      - name: Build app
+        run: ./scripts/build-app.sh
+
+      - name: Smoke test bundle
+        run: |
+          test -x build/AirSink.app/Contents/MacOS/AirSink
+          test -f build/AirSink.app/Contents/Info.plist
+          test -x build/AirSink.app/Contents/Resources/uxplay
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" build/AirSink.app/Contents/Info.plist
