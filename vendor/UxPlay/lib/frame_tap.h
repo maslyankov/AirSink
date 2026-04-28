@@ -40,6 +40,10 @@ void frame_tap_write(uint8_t codec, uint64_t pts_ns, const uint8_t *data, uint32
  * uxplay's own GStreamer decode pipeline when an external consumer is active. */
 int frame_tap_is_active(void);
 
+/* macOS only: demote NSApp to .accessory so this process doesn't appear in
+ * the Dock or app switcher. Safe to call multiple times. No-op on non-Apple. */
+void frame_tap_hide_dock(void);
+
 /* Close client + listening socket and unlink the socket file. */
 void frame_tap_shutdown(void);
 

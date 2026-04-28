@@ -2885,6 +2885,13 @@ void real_main (int argc, char *argv[]) {
 #else
 int main (int argc, char *argv[]) {
 #endif
+    /* AirSink: re-apply Dock hiding here (after gst_macos_main has set up
+     * its NSApp). Constructor-time hiding gets overridden by GStreamer's
+     * activation policy on some setups; this is the authoritative call. */
+    if (getenv("AIRSINK_HIDE_DOCK")) {
+        frame_tap_hide_dock();
+    }
+
     std::vector<char> server_hw_addr;
     std::string config_file = "";
 

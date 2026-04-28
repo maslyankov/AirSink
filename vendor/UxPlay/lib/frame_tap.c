@@ -17,6 +17,8 @@
 #if defined(__APPLE__)
 #include <sys/uio.h>
 #include <dlfcn.h>
+#include <pthread.h>
+#include <dispatch/dispatch.h>
 #include <objc/runtime.h>
 #include <objc/message.h>
 #endif
@@ -75,11 +77,8 @@ static void *accept_loop(void *arg) {
 }
 
 #if defined(__APPLE__)
-/* Demote NSApplication to accessory so the GStreamer-owned NSApp doesn't
- * show up in the Dock or app switcher. Force-loads AppKit because at
- * constructor time the framework isn't pulled in by uxplay's own deps —
- * GStreamer plugins load AppKit lazily, only after a window is created. */
-static void hide_from_dock_macos(void) {
+/* Inner: actual AppKit calls. MUST be invoked on the main thread. */
+static void hide_from_dock_macos_unsafe(void) {
     /* dlopen AppKit unconditionally — cheap if already loaded. */
     static void *appkit_handle = NULL;
     if (!appkit_handle) {
@@ -97,6 +96,19 @@ static void hide_from_dock_macos(void) {
     /* NSApplicationActivationPolicyAccessory = 1 */
     SEL setPolicy = sel_registerName("setActivationPolicy:");
     ((void (*)(id, SEL, long))objc_msgSend)(app, setPolicy, (long)1);
+}
+
+/* Public: thread-safe wrapper. gst_macos_main runs real_main on a worker
+ * thread and keeps [NSApp run] on main, so we have to dispatch the
+ * AppKit call to the main queue or it silently no-ops. */
+static void hide_from_dock_macos(void) {
+    if (pthread_main_np()) {
+        hide_from_dock_macos_unsafe();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            hide_from_dock_macos_unsafe();
+        });
+    }
 }
 
 /* Run as early as possible — before main() executes. Sets the activation
@@ -210,6 +222,12 @@ void frame_tap_write(uint8_t codec, uint64_t pts_ns, const uint8_t *data, uint32
 
 int frame_tap_is_active(void) {
     return tap_listen_fd >= 0 ? 1 : 0;
+}
+
+void frame_tap_hide_dock(void) {
+#if defined(__APPLE__)
+    hide_from_dock_macos();
+#endif
 }
 
 void frame_tap_shutdown(void) {
