@@ -16,6 +16,7 @@
 
 #if defined(__APPLE__)
 #include <sys/uio.h>
+#include <dlfcn.h>
 #include <objc/runtime.h>
 #include <objc/message.h>
 #endif
@@ -75,9 +76,19 @@ static void *accept_loop(void *arg) {
 
 #if defined(__APPLE__)
 /* Demote NSApplication to accessory so the GStreamer-owned NSApp doesn't
- * show up in the Dock or app switcher. Uses the Objective-C runtime
- * directly so we don't need to link AppKit into a C TU. */
+ * show up in the Dock or app switcher. Force-loads AppKit because at
+ * constructor time the framework isn't pulled in by uxplay's own deps —
+ * GStreamer plugins load AppKit lazily, only after a window is created. */
 static void hide_from_dock_macos(void) {
+    /* dlopen AppKit unconditionally — cheap if already loaded. */
+    static void *appkit_handle = NULL;
+    if (!appkit_handle) {
+        appkit_handle = dlopen(
+            "/System/Library/Frameworks/AppKit.framework/AppKit",
+            RTLD_LAZY | RTLD_GLOBAL);
+    }
+    if (!appkit_handle) return;
+
     Class nsApp = objc_getClass("NSApplication");
     if (!nsApp) return;
     SEL sharedSel = sel_registerName("sharedApplication");
@@ -88,10 +99,9 @@ static void hide_from_dock_macos(void) {
     ((void (*)(id, SEL, long))objc_msgSend)(app, setPolicy, (long)1);
 }
 
-/* Best-effort: if AirSink set AIRSINK_HIDE_DOCK in the environment, hide
- * before main() runs. AppKit may not be loaded yet at constructor time
- * (objc_getClass returns NULL) — in that case frame_tap_init does the late
- * demotion as a fallback. */
+/* Run as early as possible — before main() executes. Sets the activation
+ * policy so when GStreamer's osxvideosink (or anything else) creates the
+ * shared NSApp it inherits .accessory and never gets a Dock icon. */
 __attribute__((constructor))
 static void airsink_early_dock_hide(void) {
     const char *flag = getenv("AIRSINK_HIDE_DOCK");
