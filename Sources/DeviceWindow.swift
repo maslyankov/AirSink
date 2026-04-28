@@ -103,7 +103,8 @@ final class DeviceWindowController: NSWindowController, NSWindowDelegate {
 
     nonisolated func windowWillClose(_ notification: Notification) {
         let id = self.deviceId
-        Task { @MainActor in self.delegateOnClose?(id) }
+        let me = self
+        Task { @MainActor in me.delegateOnClose?(id) }
     }
 }
 

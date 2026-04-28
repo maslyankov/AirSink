@@ -85,26 +85,31 @@ final class UxPlayInstance: ObservableObject, Identifiable {
         out.fileHandleForReading.readabilityHandler = { [weak self] h in
             let d = h.availableData
             guard !d.isEmpty, let s = String(data: d, encoding: .utf8) else { return }
-            Task { @MainActor in self?.append(s) }
+            let me = self
+            Task { @MainActor in me?.append(s) }
         }
         err.fileHandleForReading.readabilityHandler = { [weak self] h in
             let d = h.availableData
             guard !d.isEmpty, let s = String(data: d, encoding: .utf8) else { return }
-            Task { @MainActor in self?.append(s) }
+            let me = self
+            Task { @MainActor in me?.append(s) }
         }
         p.terminationHandler = { [weak self] proc in
+            let me = self
+            let status = proc.terminationStatus
+            let reason = proc.terminationReason
             Task { @MainActor in
-                guard let self else { return }
-                self.process = nil
-                self.stdoutPipe?.fileHandleForReading.readabilityHandler = nil
-                self.stderrPipe?.fileHandleForReading.readabilityHandler = nil
-                self.session.stop()
-                self.devices.removeAll()
-                if proc.terminationStatus == 0 || proc.terminationReason == .uncaughtSignal {
-                    self.state = .stopped
+                guard let me else { return }
+                me.process = nil
+                me.stdoutPipe?.fileHandleForReading.readabilityHandler = nil
+                me.stderrPipe?.fileHandleForReading.readabilityHandler = nil
+                me.session.stop()
+                me.devices.removeAll()
+                if status == 0 || reason == .uncaughtSignal {
+                    me.state = .stopped
                 } else {
-                    let recent = self.logTail.suffix(3).joined(separator: " | ")
-                    self.state = .failed("uxplay exited (code \(proc.terminationStatus)). \(recent)")
+                    let recent = me.logTail.suffix(3).joined(separator: " | ")
+                    me.state = .failed("uxplay exited (code \(status)). \(recent)")
                 }
             }
         }

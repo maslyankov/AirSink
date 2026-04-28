@@ -64,14 +64,17 @@ final class StreamSession: ObservableObject {
 
     init() {
         client.onState = { [weak self] s in
-            Task { @MainActor in self?.handleClientState(s) }
+            let me = self
+            Task { @MainActor in me?.handleClientState(s) }
         }
         client.onFrame = { [weak self] frame in
             guard let self else { return }
-            self.decoder.process(frame) { width, height in
+            self.decoder.process(frame) { [weak self] width, height in
+                let me = self
                 Task { @MainActor in
-                    self.frameCount &+= 1
-                    self.applyDimensions(width: width, height: height)
+                    guard let me else { return }
+                    me.frameCount &+= 1
+                    me.applyDimensions(width: width, height: height)
                 }
             }
         }
