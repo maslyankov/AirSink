@@ -239,8 +239,12 @@ struct ContentView: View {
             HStack {
                 Text("Log").font(.caption).bold()
                 Spacer()
+                Button("Copy") { copyLogToClipboard() }
+                    .buttonStyle(.link).font(.caption)
+                    .disabled(mergedLog.isEmpty)
                 Button("Clear") { uxplay.clearAllLogs() }
                     .buttonStyle(.link).font(.caption)
+                    .disabled(mergedLog.isEmpty)
             }
             ScrollViewReader { proxy in
                 ScrollView {
@@ -257,7 +261,9 @@ struct ContentView: View {
                             }
                             .id(idx)
                         }
-                    }.padding(6)
+                    }
+                    .padding(6)
+                    .textSelection(.enabled)
                 }
                 .frame(height: 160)
                 .background(Color(nsColor: .textBackgroundColor)).cornerRadius(4)
@@ -269,6 +275,13 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private func copyLogToClipboard() {
+        let text = mergedLog.map { "[\($0.slot)] \($0.line)" }.joined(separator: "\n")
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
     }
 
     /// Interleave each slot's tail; truncate to most recent 200 entries.

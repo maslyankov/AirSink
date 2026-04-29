@@ -77,6 +77,29 @@ static void *accept_loop(void *arg) {
 }
 
 #if defined(__APPLE__)
+/* Saved original implementation of -[NSApplication setActivationPolicy:].
+ * Our replacement always coerces the requested policy to .accessory so
+ * GStreamer's setup calls can't bring the Dock icon back. */
+typedef long NSAirSinkInteger;
+static IMP original_setActivationPolicy_imp = NULL;
+
+static unsigned char airsink_setActivationPolicy_swizzled(id self, SEL _cmd, NSAirSinkInteger policy) {
+    (void)policy;  /* always force .accessory = 1 */
+    typedef unsigned char (*OriginalImp)(id, SEL, NSAirSinkInteger);
+    return ((OriginalImp)original_setActivationPolicy_imp)(self, _cmd, (NSAirSinkInteger)1);
+}
+
+static void install_setActivationPolicy_swizzle(void) {
+    if (original_setActivationPolicy_imp) return;  /* already installed */
+    Class nsApp = objc_getClass("NSApplication");
+    if (!nsApp) return;
+    SEL sel = sel_registerName("setActivationPolicy:");
+    Method m = class_getInstanceMethod(nsApp, sel);
+    if (!m) return;
+    original_setActivationPolicy_imp = method_getImplementation(m);
+    method_setImplementation(m, (IMP)airsink_setActivationPolicy_swizzled);
+}
+
 /* Inner: actual AppKit calls. MUST be invoked on the main thread. */
 static void hide_from_dock_macos_unsafe(void) {
     /* dlopen AppKit unconditionally — cheap if already loaded. */
@@ -86,16 +109,28 @@ static void hide_from_dock_macos_unsafe(void) {
             "/System/Library/Frameworks/AppKit.framework/AppKit",
             RTLD_LAZY | RTLD_GLOBAL);
     }
-    if (!appkit_handle) return;
+    if (!appkit_handle) {
+        fprintf(stderr, "frame_tap: AppKit dlopen failed: %s\n", dlerror());
+        return;
+    }
+
+    /* Install the policy-coercion swizzle the first time we run. */
+    install_setActivationPolicy_swizzle();
 
     Class nsApp = objc_getClass("NSApplication");
-    if (!nsApp) return;
+    if (!nsApp) {
+        fprintf(stderr, "frame_tap: NSApplication class not found\n");
+        return;
+    }
     SEL sharedSel = sel_registerName("sharedApplication");
     id app = ((id (*)(id, SEL))objc_msgSend)((id)nsApp, sharedSel);
-    if (!app) return;
-    /* NSApplicationActivationPolicyAccessory = 1 */
+    if (!app) {
+        fprintf(stderr, "frame_tap: NSApp sharedApplication returned nil\n");
+        return;
+    }
+    /* setActivationPolicy: is now swizzled — argument is ignored, .accessory wins. */
     SEL setPolicy = sel_registerName("setActivationPolicy:");
-    ((void (*)(id, SEL, long))objc_msgSend)(app, setPolicy, (long)1);
+    ((unsigned char (*)(id, SEL, long))objc_msgSend)(app, setPolicy, (long)1);
 }
 
 /* Public: thread-safe wrapper. gst_macos_main runs real_main on a worker
