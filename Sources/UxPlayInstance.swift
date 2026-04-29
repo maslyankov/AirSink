@@ -133,16 +133,6 @@ final class UxPlayInstance: ObservableObject, Identifiable {
         process?.terminate()
     }
 
-    /// Force-disconnect a single device. uxplay can't drop one client cleanly,
-    /// so this stop+starts the slot.
-    func disconnect(deviceId: String) {
-        devices.removeAll { $0.id == deviceId }
-        if state.isActive {
-            stop()
-            DispatchQueue.main.async { [weak self] in self?.start() }
-        }
-    }
-
     func clearLog() { logTail.removeAll() }
 
     private func append(_ chunk: String) {

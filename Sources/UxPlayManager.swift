@@ -51,8 +51,12 @@ final class UxPlayManager: ObservableObject {
         nextSlotId = 1
     }
 
+    /// Drop the slot the device is on entirely; maintainPool will spawn a
+    /// fresh waiting slot if one isn't already present.
     func disconnect(deviceId: String) {
-        instance(for: deviceId)?.disconnect(deviceId: deviceId)
+        guard let inst = instance(for: deviceId) else { return }
+        removeInstance(inst)
+        maintainPool()
     }
 
     func clearAllLogs() {
@@ -122,9 +126,15 @@ final class UxPlayManager: ObservableObject {
     private func observeInstance(_ inst: UxPlayInstance) {
         let stateCancel = inst.$state.sink { [weak self, weak inst] state in
             guard let self, let inst else { return }
-            if case .failed = state {
+            // Reclaim a slot whenever its process exits — whether it crashed
+            // (.failed) or stopped cleanly (.stopped). maintainPool spawns
+            // a fresh waiting slot if one isn't already present.
+            switch state {
+            case .failed, .stopped:
                 self.removeInstance(inst)
                 self.maintainPool()
+            case .starting, .running:
+                break
             }
         }
         let devicesCancel = inst.$devices.sink { [weak self] _ in
