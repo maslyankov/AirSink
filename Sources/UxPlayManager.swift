@@ -124,11 +124,14 @@ final class UxPlayManager: ObservableObject {
     }
 
     private func observeInstance(_ inst: UxPlayInstance) {
-        let stateCancel = inst.$state.sink { [weak self, weak inst] state in
+        // dropFirst() is critical — @Published fires the current value the
+        // moment we subscribe. The initial value is .stopped, and reacting
+        // to it would call removeInstance → spawn → subscribe → .stopped →
+        // spawn → … → stack overflow.
+        let stateCancel = inst.$state.dropFirst().sink { [weak self, weak inst] state in
             guard let self, let inst else { return }
-            // Reclaim a slot whenever its process exits — whether it crashed
-            // (.failed) or stopped cleanly (.stopped). maintainPool spawns
-            // a fresh waiting slot if one isn't already present.
+            // Reclaim slots only on TRANSITIONS into .failed or .stopped
+            // (process exited or crashed after we started it).
             switch state {
             case .failed, .stopped:
                 self.removeInstance(inst)
@@ -137,7 +140,7 @@ final class UxPlayManager: ObservableObject {
                 break
             }
         }
-        let devicesCancel = inst.$devices.sink { [weak self] _ in
+        let devicesCancel = inst.$devices.dropFirst().sink { [weak self] _ in
             // Defer one tick so the device array is settled before we react.
             DispatchQueue.main.async { self?.maintainPool() }
         }
